@@ -1,98 +1,70 @@
 
-import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
-import { useAuthStore } from './store/authStore';
-
-// Pages
-import LandingPage from './pages/LandingPage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import DashboardPage from './pages/DashboardPage';
-import BuilderPage from './pages/BuilderPage';
-import ProjectPage from './pages/ProjectPage';
-
-// Components
-import LoadingSpinner from './components/LoadingSpinner';
-import ProtectedRoute from './components/ProtectedRoute';
-
-// Styles
-import './styles/globals.css';
+import React, { useState, useCallback } from 'react';
+import { Header } from './components/Header';
+import { PromptInput } from './components/PromptInput';
+import { GenerationControls } from './components/GenerationControls';
+import { GeneratedCodeViewer } from './components/GeneratedCodeViewer';
+import { generateAppSpecification } from './services/geminiService';
+import { generateProjectFiles } from './services/codeGeneratorService';
+import type { AppSpecification } from './types';
+import { GenerationState } from './types';
 
 const App: React.FC = () => {
-  const { verifyToken, isAuthenticated, isLoading } = useAuthStore();
+  const [prompt, setPrompt] = useState<string>(
+    `Create a 2-screen application for a coffee shop. 
+The first screen, 'Home', should have a title 'Welcome to AI Brews' and a button 'View Menu' that navigates to the 'Menu' screen.
+The second screen, 'Menu', should display a title 'Our Menu' and a list of three coffee items: 'Latte', 'Espresso', and 'Cappuccino'.`
+  );
+  const [generationState, setGenerationState] = useState<GenerationState>(GenerationState.IDLE);
+  const [generatedFiles, setGeneratedFiles] = useState<Record<string, string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    verifyToken();
-  }, [verifyToken]);
+  const handleGenerateApp = useCallback(async () => {
+    if (!prompt.trim()) {
+      setError("Please enter a description for your app.");
+      return;
+    }
+    setError(null);
+    setGeneratedFiles(null);
+    setGenerationState(GenerationState.GENERATING_SPEC);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <LoadingSpinner />
-      </div>
-    );
-  }
+    try {
+      const specJson = await generateAppSpecification(prompt);
+      const appSpec: AppSpecification = JSON.parse(specJson);
+
+      setGenerationState(GenerationState.GENERATING_CODE);
+      const files = generateProjectFiles(appSpec);
+      setGeneratedFiles(files);
+      setGenerationState(GenerationState.SUCCESS);
+    } catch (err) {
+      console.error(err);
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(`Failed to generate app: ${errorMessage}`);
+      setGenerationState(GenerationState.ERROR);
+    }
+  }, [prompt]);
 
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-900 font-sans">
-        <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={
-            isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />
-          } />
-          <Route path="/register" element={
-            isAuthenticated ? <Navigate to="/dashboard" replace /> : <RegisterPage />
-          } />
-
-          {/* Protected routes */}
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/builder" element={
-            <ProtectedRoute>
-              <BuilderPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/project/:id" element={
-            <ProtectedRoute>
-              <ProjectPage />
-            </ProtectedRoute>
-          } />
-
-          {/* Catch all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#374151',
-              color: '#f9fafb',
-              border: '1px solid #4b5563',
-            },
-            success: {
-              iconTheme: {
-                primary: '#10b981',
-                secondary: '#f9fafb',
-              },
-            },
-            error: {
-              iconTheme: {
-                primary: '#ef4444',
-                secondary: '#f9fafb',
-              },
-            },
-          }}
+    <div className="min-h-screen bg-gray-900 font-sans flex flex-col">
+      <Header />
+      <main className="flex-grow container mx-auto p-4 md:p-8 flex flex-col">
+        <div className="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
+          <PromptInput value={prompt} onChange={setPrompt} />
+          <GenerationControls
+            onGenerate={handleGenerateApp}
+            isLoading={generationState === GenerationState.GENERATING_SPEC || generationState === GenerationState.GENERATING_CODE}
+          />
+        </div>
+        <GeneratedCodeViewer
+          generationState={generationState}
+          generatedFiles={generatedFiles}
+          error={error}
         />
-      </div>
-    </Router>
+      </main>
+      <footer className="text-center p-4 text-gray-500 text-sm">
+        <p>Powered by Gemini & React</p>
+      </footer>
+    </div>
   );
 };
 
