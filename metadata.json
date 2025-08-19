@@ -1,0 +1,5 @@
+{
+  "name": "AI App Builder",
+  "description": "A web platform that allows users to describe a mobile application in natural language. The platform then uses an AI to interpret these instructions and generate a downloadable, production-ready mobile app project using React Native and Expo.",
+  "requestFramePermissions": []
+}
